@@ -27,15 +27,14 @@ on:
       event_source:
         description: 'Who is triggering this workflow: cron or issue'
         required: false
-        type: string
+        type: choice
         default: ''
+        options:
+          - ''
+          - cron
+          - issue
       event_data:
         description: 'Additional data related to the event that triggered this workflow'
-        required: false
-        type: string
-        default: ''
-      request_id:
-        description: 'GitHubClaw request id used to correlate this workflow run'
         required: false
         type: string
         default: ''
@@ -44,7 +43,7 @@ on:
     types: [coding-agent]
 
 # Actions UI 上顯示的執行名稱，會把 issue 編號直接帶進來，方便辨識。
-run-name: "🦞 執行小龍蝦 #${{ github.event_name == 'repository_dispatch' && github.event.client_payload.issue_number || inputs.issue_number }}${{ (github.event_name == 'repository_dispatch' && github.event.client_payload.request_id || inputs.request_id) && format(' | req:{0}', github.event_name == 'repository_dispatch' && github.event.client_payload.request_id || inputs.request_id) || '' }}"
+run-name: "🦞 執行小龍蝦 #${{ github.event_name == 'repository_dispatch' && github.event.client_payload.issue_number || inputs.issue_number }}"
 
 # 避免同一個 repo + issue 同時有多個 agent 執行互相覆蓋。
 concurrency:
@@ -76,7 +75,7 @@ jobs:
     steps:
       # 把目標 repo 檢出到 runner，後面才能切 branch、寫檔與 push。
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: "issue-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.issue_number || inputs.issue_number }}"
           fetch-depth: 1
@@ -219,7 +218,7 @@ jobs:
           set -e
 
           # Pi 即使遇到 provider 錯誤也會以 exit 0 結束，需要從 output.jsonl 偵測 errorMessage
-          # 偵測到時補寫進 error.log；若尚未產生 result.md 才讓本步驟失敗以觸發後續失敗處理
+          # 偵測到時補寫進 error.log 並讓本步驟失敗，後續的失敗處理才會觸發
           HAS_ERROR=0
           if jq -e '.. | objects | select((.errorMessage // "") != "")' \
               "artifacts/${COMMENT_ID}/output.jsonl" > /dev/null; then
@@ -257,14 +256,14 @@ jobs:
 
       - name: 任務失敗處理
         if: failure() && steps.pi_task.conclusion == 'failure'
-        uses: duotify/GitHubClawToolkit/actions/error-handler-action@v1.1.4
+        uses: duotify/GitHubClawToolkit/actions/error-handler-action@v1
         with:
           output_file: artifacts/${{ env.COMMENT_ID }}/error.log
           result_file: artifacts/${{ env.COMMENT_ID }}/result.md
 
       - name: 執行結果回報
         if: always()
-        uses: duotify/GitHubClawToolkit/actions/update-comment-action@v1.1.4
+        uses: duotify/GitHubClawToolkit/actions/update-comment-action@v1
         with:
           issue_number: ${{ env.ISSUE_NUMBER }}
           comment_id: ${{ env.COMMENT_ID }}
